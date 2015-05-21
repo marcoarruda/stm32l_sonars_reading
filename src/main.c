@@ -113,13 +113,6 @@ int main(void)
 
     InitializeUSART3();
 
-    //LCD_GLASS_Configure_GPIO();
-    //LCD_GLASS_Init();
-
-    //LCD_GLASS_ScrollSentence("  ** ADC SENSORS **  ", 1, 50);
-
-    //SysTick->CTRL &= ~(SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk);
-
     configureWakeup();
     configureDMA();
     configureADC_Temp();
@@ -127,7 +120,7 @@ int main(void)
     t = 0;
     predefvalue = 32767;
       
-    while (1){
+    while (1) {
         if (TimingDelay > 0) continue;
         TimingDelay = 450;
         acquireTemperatureData();
@@ -138,30 +131,7 @@ int main(void)
 
         powerDownADC_Temper();
         processTempData();
-
-        if (flag_UserButton == TRUE) {
-            clearUserButtonFlag();
-            if (CurrentlyDisplayed == Display_TemperatureDegC)
-            {
-                CurrentlyDisplayed = Display_ADCval;
-            }
-            else
-            {
-                CurrentlyDisplayed = Display_TemperatureDegC;
-            }
-        }
-
-        if (CurrentlyDisplayed == Display_TemperatureDegC) {
-            sprintf(strDisp, "%d °C", temperature_C);
-        }
-        else {
-            sprintf(strDisp, "%d", ultrassomAVG);
-        }
-        
-        t++;
-        char stringUltrassomAVG[60];
         ultrassom1 = predefvalue;
-        sprintf(stringUltrassomAVG, "[[%c;%x;%d]]", ultrassom1, ultrassom1, ultrassom1);
         
         while (USART_GetFlagStatus(USART3, USART_FLAG_TXE) == RESET);
         USART_SendData(USART3, ultrassom1);
@@ -305,8 +275,6 @@ void powerDownADC_Temper(void)
 
 void configureADC_Temp(void)
 {
-    uint32_t ch_index;
-
     /* Enable ADC clock & SYSCFG */
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
 
@@ -332,37 +300,21 @@ void configureADC_Temp(void)
     ADC_InitStructure.ADC_NbrOfConversion = ADC_CONV_BUFF_SIZE;             // Set conversion data alignement to ADC_CONV_BUFF_SIZE
     ADC_Init(ADC1, &ADC_InitStructure);
 
-    /* ADC1 regular Temperature sensor channel16 and internal reference channel17 configuration */
-
-    for (ch_index = 1; ch_index <= MAX_TEMP_CHNL; ch_index++){
-        ADC_RegularChannelConfig(ADC1, ADC_Channel_16, ch_index,
-            ADC_SampleTime_384Cycles);
-    }
-
-    // Aqui é implementado a conversão do canal analógico do sensor ultrassom
     ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 13, ADC_SampleTime_384Cycles);
     ADC_RegularChannelConfig(ADC1, ADC_Channel_13, 14, ADC_SampleTime_384Cycles);
     ADC_RegularChannelConfig(ADC1, ADC_Channel_12, 15, ADC_SampleTime_384Cycles);
     ADC_RegularChannelConfig(ADC1, ADC_Channel_11, 16, ADC_SampleTime_384Cycles);
     ADC_RegularChannelConfig(ADC1, ADC_Channel_10, 17, ADC_SampleTime_384Cycles);
-
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_17, 18, ADC_SampleTime_384Cycles);
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_17, 19, ADC_SampleTime_384Cycles);
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_17, 20, ADC_SampleTime_384Cycles);
 }
 
 void configureDMA(void)
 {
-    /* Declare NVIC init Structure */
     NVIC_InitTypeDef NVIC_InitStructure;
 
-    /* Enable DMA1 clock */
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
-    /* De-initialise  DMA */
     DMA_DeInit(DMA1_Channel1);
 
-    /* DMA1 channel1 configuration */
     DMA_StructInit(&DMA_InitStructure);
     DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&(ADC1->DR);	     // Set DMA channel Peripheral base address to ADC Data register
     DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)&ADC_ConvertedValueBuff;  // Set DMA channel Memeory base addr to ADC_ConvertedValueBuff address
@@ -377,10 +329,8 @@ void configureDMA(void)
     DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;                               // Disable memory to memory option 
     DMA_Init(DMA1_Channel1, &DMA_InitStructure);								 // Use Init structure to initialise channel1 (channel linked to ADC)
 
-    /* Enable Transmit Complete Interrup for DMA channel 1 */
     DMA_ITConfig(DMA1_Channel1, DMA_IT_TC, ENABLE);
 
-    /* Setup NVIC for DMA channel 1 interrupt request */
     NVIC_InitStructure.NVIC_IRQChannel = DMA1_Channel1_IRQn;
     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
@@ -389,21 +339,10 @@ void configureDMA(void)
 
 }
 
-
-
-
-/**
-* @brief  Configures the different system clocks.
-* @param  None
-* @retval None
-*/
 void RCC_Configuration(void)
 {
-
-    /* Enable HSI Clock */
     RCC_HSICmd(ENABLE);
 
-    /*!< Wait till HSI is ready */
     while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET)
     {
     }
@@ -418,10 +357,8 @@ void RCC_Configuration(void)
         while (1);
     }
 
-    /* Enable  comparator clock LCD and PWR mngt */
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_LCD | RCC_APB1Periph_PWR, ENABLE);
 
-    /* Enable ADC clock & SYSCFG */
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_SYSCFG, ENABLE);
 
 }
@@ -429,36 +366,22 @@ void RCC_Configuration(void)
 
 void RTC_Configuration(void)
 {
-
-    /* Allow access to the RTC */
     PWR_RTCAccessCmd(ENABLE);
 
-    /* Reset Backup Domain */
     RCC_RTCResetCmd(ENABLE);
     RCC_RTCResetCmd(DISABLE);
 
-    /* LSE Enable */
     RCC_LSEConfig(RCC_LSE_ON);
 
-    /* Wait till LSE is ready */
     while (RCC_GetFlagStatus(RCC_FLAG_LSERDY) == RESET)
     {
     }
 
     RCC_RTCCLKCmd(ENABLE);
-
-    /* LCD Clock Source Selection */
+    
     RCC_RTCCLKConfig(RCC_RTCCLKSource_LSE);
 
 }
-
-/**
-* @brief  To initialize the I/O ports
-* @caller main
-* @param None
-* @retval None
-*/
-
 
 void conf_analog_all_GPIOS(void)
 {
@@ -549,85 +472,15 @@ void  Init_GPIOs(void)
 
 }
 
-void insertionSort(uint16_t *numbers, uint32_t array_size)
-{
-
-    uint32_t i, j;
-    uint32_t index;
-
-    for (i = 1; i < array_size; i++) {
-        index = numbers[i];
-        j = i;
-        while ((j > 0) && (numbers[j - 1] > index)) {
-            numbers[j] = numbers[j - 1];
-            j = j - 1;
-        }
-        numbers[j] = index;
-    }
-}
-
-uint32_t interquartileMean(uint16_t *array, uint32_t numOfSamples)
-{
-    uint32_t sum = 0;
-    uint32_t  index, maxindex;
-    /* discard  the lowest and the highest data samples */
-    maxindex = 3 * numOfSamples / 4;
-    for (index = (numOfSamples / 4); index < maxindex; index++){
-        sum += array[index];
-    }
-    /* return the mean value of the remaining samples value*/
-    return (sum / (numOfSamples / 2));
-}
-
-
 void processTempData(void)
 {
-    uint32_t index, dataSum;
-    dataSum = 0;
-
-    /* sort received data in */
-    insertionSort(ADC_ConvertedValueBuff, MAX_TEMP_CHNL);
-
-    /* Calculate the Interquartile mean */
-    tempAVG = interquartileMean(ADC_ConvertedValueBuff, MAX_TEMP_CHNL);
-
-    /* Sum up all mesured data for reference voltage average calculation */
-    for (index = 17; index < ADC_CONV_BUFF_SIZE; index++){
-        dataSum += ADC_ConvertedValueBuff[index];
-    }
-    /* Devide sum up result by 3 for the temperature average calculation*/
-    refAVG = dataSum / 3;
-
     ultrassom1 = ADC_ConvertedValueBuff[13];
     ultrassom2 = ADC_ConvertedValueBuff[14];
     ultrassom3 = ADC_ConvertedValueBuff[15];
     ultrassom4 = ADC_ConvertedValueBuff[16];
     ultrassom5 = ADC_ConvertedValueBuff[17];
-
-#if VDD_CORRECTION == 1
-    /* estimation of VDD=VDDA=Vref+ from ADC measurement of Vrefint reference voltage in mV */
-    vdd_ref = calibdata.VREF * 3000 / refAVG;
-
-    /* correction factor if VDD <> 3V */
-    tempAVG = tempAVG * vdd_ref / 3000;
-
-#endif
-
-    /* Calculate temperature in °C from Interquartile mean */
-    temperature_C = ((int32_t)tempAVG - (int32_t)calibdata.TS_CAL_1);
-    temperature_C = temperature_C * (int32_t)(HOT_CAL_TEMP - COLD_CAL_TEMP);
-    temperature_C = temperature_C /
-        (int32_t)(calibdata.TS_CAL_2 - calibdata.TS_CAL_1);
-    temperature_C = temperature_C + COLD_CAL_TEMP;
 }
 
-
-
-/**
-* @brief  Inserts a delay time.
-* @param  nTime: specifies the delay time length, in 10 ms.
-* @retval None
-*/
 void Delay(uint32_t nTime)
 {
     TimingDelay = nTime;
@@ -636,11 +489,6 @@ void Delay(uint32_t nTime)
 
 }
 
-/**
-* @brief  Decrements the TimingDelay variable.
-* @param  None
-* @retval None
-*/
 void TimingDelay_Decrement(void)
 {
 
@@ -651,27 +499,3 @@ void TimingDelay_Decrement(void)
 
 }
 
-
-#ifdef  USE_FULL_ASSERT
-
-/**
-* @brief  Reports the name of the source file and the source line number
-*         where the assert_param error has occurred.
-* @param  file: pointer to the source file name
-* @param  line: assert_param error line source number
-* @retval None
-*/
-void assert_failed(uint8_t* file, uint32_t line)
-{
-    /* User can add his own implementation to report the file name and line number,
-    ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-
-    /* Infinite loop */
-    while (1)
-    {
-    }
-}
-
-#endif
-
-/******************* (C) COPYRIGHT 2011 STMicroelectronics *****END OF FILE****/
