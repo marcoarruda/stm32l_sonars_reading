@@ -43,6 +43,7 @@ Temporary Items
 .apdisk
 
 # Arquivos gerados para cada build
-./EWARM/*
-./STM32L152RC (32L152C-DISCOVERY)/*
-./Binary/*
+EWARM/*
+STM32L152RC (32L152C-DISCOVERY)/*
+Binary/*
+_htmresc/*
