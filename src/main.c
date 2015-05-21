@@ -7,16 +7,16 @@
 
 typedef struct
 {
-    uint16_t VREF;
-    uint16_t TS_CAL_1; // low temperature calibration data
-    uint16_t reserved;
-    uint16_t TS_CAL_2; // high temperature calibration data
+  uint16_t VREF;
+  uint16_t TS_CAL_1; // low temperature calibration data
+  uint16_t reserved;
+  uint16_t TS_CAL_2; // high temperature calibration data
 } TSCALIB_TypeDef;
 
 typedef enum
 {
-    Display_TemperatureDegC,
-    Display_ADCval
+  Display_TemperatureDegC,
+  Display_ADCval
 } DisplayState_TypeDef;
 
 
@@ -86,416 +86,418 @@ uint32_t interquartileMean(uint16_t *array, uint32_t numOfSamples);
 void clearUserButtonFlag(void);
 /*******************************************************************************/
 
-
-void USART3SendString(char* string) {
-    while (*string != 0x00) {
-        while (USART_GetFlagStatus(USART3, USART_FLAG_TXE) == RESET);
-        USART_SendData(USART3, *string);
-        string++;
-    }
-}
-
 int main(void)
 {
-    RCC_Configuration();
-    RTC_Configuration();
-    PWR_VoltageScalingConfig(PWR_VoltageScaling_Range1);
-    while (PWR_GetFlagStatus(PWR_FLAG_VOS) != RESET);
-
+  RCC_Configuration();
+  RTC_Configuration();
+  PWR_VoltageScalingConfig(PWR_VoltageScaling_Range1);
+  while (PWR_GetFlagStatus(PWR_FLAG_VOS) != RESET);
+  
 #ifdef  DEBUG_SWD_PIN
-    DBGMCU_Config(DBGMCU_SLEEP | DBGMCU_STOP | DBGMCU_STANDBY, ENABLE);
+  DBGMCU_Config(DBGMCU_SLEEP | DBGMCU_STOP | DBGMCU_STANDBY, ENABLE);
 #endif
-
-    RCC_GetClocksFreq(&RCC_Clocks);
-    SysTick_Config(RCC_Clocks.HCLK_Frequency / 500);
-
-    Init_GPIOs();
-
-    InitializeUSART3();
-
-    configureWakeup();
-    configureDMA();
-    configureADC_Temp();
-
-    t = 0;
-    predefvalue = 32767;
-      
-    while (1) {
-        if (TimingDelay > 0) continue;
-        TimingDelay = 450;
-        acquireTemperatureData();
-        __WFI();
-
-        /* for DEBUG purpose uncomment the following line and comment the __WFI call to do not enter STOP mode */
-        //while (!flag_ADCDMA_TransferComplete);
-
-        powerDownADC_Temper();
-        processTempData();
-        ultrassom1 = predefvalue;
-        
-        while (USART_GetFlagStatus(USART3, USART_FLAG_TXE) == RESET);
-        USART_SendData(USART3, ultrassom1);
-
-        GPIO_TOGGLE(GPIOB, GPIO_Pin_6);
-    }
-
+  
+  RCC_GetClocksFreq(&RCC_Clocks);
+  SysTick_Config(RCC_Clocks.HCLK_Frequency / 500);
+  
+  Init_GPIOs();
+  
+  InitializeUSART3();
+  
+  configureWakeup();
+  configureDMA();
+  configureADC_Temp();
+  
+  t = 0;
+  predefvalue = 32767;
+  
+  while (1) {
+    if (TimingDelay > 0) continue;
+    TimingDelay = 450;
+    acquireTemperatureData();
+    __WFI();
+    
+    /* for DEBUG purpose uncomment the following line and comment the __WFI call to do not enter STOP mode */
+    //while (!flag_ADCDMA_TransferComplete);
+    
+    powerDownADC_Temper();
+    processTempData();
+    ultrassom5 = predefvalue;
+    ultrassom4 = ultrassom5 - 12000;
+    ultrassom3 = ultrassom4 - 8000;
+    ultrassom2 = ultrassom3 - 300;
+    ultrassom1 = ultrassom2 - 10;
+    
+    /* uint16 > -32768 -- +32767 */
+    /* tamanho máximo de %s de uint16 = 5 */
+    /* tamanho máximo de string com 5 valores uint16 = 2([[) + 5*5 + 4(;;;;) + 2(]]) = 33 */
+    char string[33];
+    sprintf(string, "[[%d;%d;%d;%d;%d]]", ultrassom1, ultrassom2, ultrassom3, ultrassom4, ultrassom5);
+    USART3SendString(string);
+    
+    
+    GPIO_TOGGLE(GPIOB, GPIO_Pin_6);
+  }
+  
 }
 
 
 void configureWakeup(void)
 {
-    /* Declare initialisation structures for (NVIC) and external interupt (EXTI) */
-    NVIC_InitTypeDef NVIC_InitStructure;
-    EXTI_InitTypeDef EXTI_InitStructure;
-
-    /* Clear IT pending bit from external interrupt Line 20 */
-    EXTI_ClearITPendingBit(EXTI_Line20);
-
-    /* Initialise EXTI using its init structure */
-    EXTI_InitStructure.EXTI_Line = EXTI_Line20;			 // interrupt generated on RTC Wakeup event (Line 20)
-    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;    // Use EXTI line as interrupt
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising; // Trigg interrupt on rising edge detection
-    EXTI_InitStructure.EXTI_LineCmd = ENABLE;				 // Enable EXTI line
-    EXTI_Init(&EXTI_InitStructure);
-
-    /* Initialise the NVIC interrupts (IRQ) using its init structure */
-    NVIC_InitStructure.NVIC_IRQChannel = RTC_WKUP_IRQn;        // set IRQ channel to RTC Wakeup Interrupt  
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;	 // set channel Preemption priority to 0
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;         // set channel sub priority to 0
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;	         // Enable channel
-    NVIC_Init(&NVIC_InitStructure);
-
-    /* Clear Wake-up flag */
-    PWR->CR |= PWR_CR_CWUF;
-
-    /* Enable PWR clock */
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
-
-    /* Allow access to RTC */
-    PWR_RTCAccessCmd(ENABLE);
-
-    /* Enable Low Speed External clock */
-    RCC_LSEConfig(RCC_LSE_ON);
-
-    /* Wait till LSE is ready */
-    while (RCC_GetFlagStatus(RCC_FLAG_LSERDY) == RESET);
-
-    /* Select LSE clock as RCC Clock source */
-    RCC_RTCCLKConfig(RCC_RTCCLKSource_LSE);
-
-    /* Enable the RTC Clock */
-    RCC_RTCCLKCmd(ENABLE);
-
-    /* Wait for RTC APB registers synchronisation */
-    RTC_WaitForSynchro();
-
-    /* Select 1Hz clock for RTC wake up*/
-    RTC_WakeUpClockConfig(RTC_WakeUpClock_CK_SPRE_16bits);
-
-    /* Set Wakeup auto-reload value to 2 sec */
-    RTC_SetWakeUpCounter(1);
-
-    /* Clear RTC Interrupt pending bit */
-    RTC_ClearITPendingBit(RTC_IT_WUT);
-
-    /* Clear EXTI line20 Interrupt pending bit */
-    EXTI_ClearITPendingBit(EXTI_Line20);
-
-    /* Enable the Wakeup Interrupt */
-    RTC_ITConfig(RTC_IT_WUT, ENABLE);
+  /* Declare initialisation structures for (NVIC) and external interupt (EXTI) */
+  NVIC_InitTypeDef NVIC_InitStructure;
+  EXTI_InitTypeDef EXTI_InitStructure;
+  
+  /* Clear IT pending bit from external interrupt Line 20 */
+  EXTI_ClearITPendingBit(EXTI_Line20);
+  
+  /* Initialise EXTI using its init structure */
+  EXTI_InitStructure.EXTI_Line = EXTI_Line20;			 // interrupt generated on RTC Wakeup event (Line 20)
+  EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;    // Use EXTI line as interrupt
+  EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising; // Trigg interrupt on rising edge detection
+  EXTI_InitStructure.EXTI_LineCmd = ENABLE;				 // Enable EXTI line
+  EXTI_Init(&EXTI_InitStructure);
+  
+  /* Initialise the NVIC interrupts (IRQ) using its init structure */
+  NVIC_InitStructure.NVIC_IRQChannel = RTC_WKUP_IRQn;        // set IRQ channel to RTC Wakeup Interrupt  
+  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;	 // set channel Preemption priority to 0
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;         // set channel sub priority to 0
+  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;	         // Enable channel
+  NVIC_Init(&NVIC_InitStructure);
+  
+  /* Clear Wake-up flag */
+  PWR->CR |= PWR_CR_CWUF;
+  
+  /* Enable PWR clock */
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
+  
+  /* Allow access to RTC */
+  PWR_RTCAccessCmd(ENABLE);
+  
+  /* Enable Low Speed External clock */
+  RCC_LSEConfig(RCC_LSE_ON);
+  
+  /* Wait till LSE is ready */
+  while (RCC_GetFlagStatus(RCC_FLAG_LSERDY) == RESET);
+  
+  /* Select LSE clock as RCC Clock source */
+  RCC_RTCCLKConfig(RCC_RTCCLKSource_LSE);
+  
+  /* Enable the RTC Clock */
+  RCC_RTCCLKCmd(ENABLE);
+  
+  /* Wait for RTC APB registers synchronisation */
+  RTC_WaitForSynchro();
+  
+  /* Select 1Hz clock for RTC wake up*/
+  RTC_WakeUpClockConfig(RTC_WakeUpClock_CK_SPRE_16bits);
+  
+  /* Set Wakeup auto-reload value to 2 sec */
+  RTC_SetWakeUpCounter(1);
+  
+  /* Clear RTC Interrupt pending bit */
+  RTC_ClearITPendingBit(RTC_IT_WUT);
+  
+  /* Clear EXTI line20 Interrupt pending bit */
+  EXTI_ClearITPendingBit(EXTI_Line20);
+  
+  /* Enable the Wakeup Interrupt */
+  RTC_ITConfig(RTC_IT_WUT, ENABLE);
 }
 
 void setUserButtonFlag(void)
 {
-    flag_UserButton = TRUE;
+  flag_UserButton = TRUE;
 }
 
 void clearUserButtonFlag(void)
 {
-    flag_UserButton = FALSE;
+  flag_UserButton = FALSE;
 }
 
 void setADCDMA_TransferComplete(void)
 {
-    flag_ADCDMA_TransferComplete = TRUE;
+  flag_ADCDMA_TransferComplete = TRUE;
 }
 
 void clearADCDMA_TransferComplete(void)
 {
-    flag_ADCDMA_TransferComplete = FALSE;
+  flag_ADCDMA_TransferComplete = FALSE;
 }
 
 void acquireTemperatureData(void)
 {
-    /* Enable ADC clock */
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
-
-    /* Enable DMA1 clock */
-    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
-
-    /* Enable ADC1 */
-    ADC_Cmd(ADC1, ENABLE);
-
-    /* Wait until the ADC1 is ready */
-    while (ADC_GetFlagStatus(ADC1, ADC_FLAG_ADONS) == RESET);
-
-    /* re-initialize DMA -- is it needed ?*/
-    DMA_DeInit(DMA1_Channel1);
-    DMA_Init(DMA1_Channel1, &DMA_InitStructure);
-    DMA_Cmd(DMA1_Channel1, ENABLE);
-
-    /* Enable DMA channel 1 Transmit complete interrupt*/
-    DMA_ITConfig(DMA1_Channel1, DMA_IT_TC, ENABLE);
-
-    /* Disable DMA mode for ADC1 */
-    ADC_DMACmd(ADC1, DISABLE);
-
-    /* Enable DMA mode for ADC1 */
-    ADC_DMACmd(ADC1, ENABLE);
-
-    /* Clear global flag for DMA transfert complete */
-    clearADCDMA_TransferComplete();
-
-    /* Start ADC conversion */
-    ADC_SoftwareStartConv(ADC1);
+  /* Enable ADC clock */
+  RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
+  
+  /* Enable DMA1 clock */
+  RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+  
+  /* Enable ADC1 */
+  ADC_Cmd(ADC1, ENABLE);
+  
+  /* Wait until the ADC1 is ready */
+  while (ADC_GetFlagStatus(ADC1, ADC_FLAG_ADONS) == RESET);
+  
+  /* re-initialize DMA -- is it needed ?*/
+  DMA_DeInit(DMA1_Channel1);
+  DMA_Init(DMA1_Channel1, &DMA_InitStructure);
+  DMA_Cmd(DMA1_Channel1, ENABLE);
+  
+  /* Enable DMA channel 1 Transmit complete interrupt*/
+  DMA_ITConfig(DMA1_Channel1, DMA_IT_TC, ENABLE);
+  
+  /* Disable DMA mode for ADC1 */
+  ADC_DMACmd(ADC1, DISABLE);
+  
+  /* Enable DMA mode for ADC1 */
+  ADC_DMACmd(ADC1, ENABLE);
+  
+  /* Clear global flag for DMA transfert complete */
+  clearADCDMA_TransferComplete();
+  
+  /* Start ADC conversion */
+  ADC_SoftwareStartConv(ADC1);
 }
 
 void powerDownADC_Temper(void)
 {
-    /* Disable DMA channel1 */
-    DMA_Cmd(DMA1_Channel1, ENABLE);
-    /* Disable ADC1 */
-    ADC_Cmd(ADC1, DISABLE);
-
-    /* Disable ADC1 clock */
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, DISABLE);
-    /* Disable DMA1 clock */
-    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, DISABLE);
+  /* Disable DMA channel1 */
+  DMA_Cmd(DMA1_Channel1, ENABLE);
+  /* Disable ADC1 */
+  ADC_Cmd(ADC1, DISABLE);
+  
+  /* Disable ADC1 clock */
+  RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, DISABLE);
+  /* Disable DMA1 clock */
+  RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, DISABLE);
 }
 
 void configureADC_Temp(void)
 {
-    /* Enable ADC clock & SYSCFG */
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
-
-    /* Enable the internal connection of Temperature sensor and with the ADC channels*/
-    ADC_TempSensorVrefintCmd(ENABLE);
-
-    /* Wait until ADC + Temp sensor start */
-    T_StartupTimeDelay = 1024;
-    while (T_StartupTimeDelay--);
-
-    /* Setup ADC common init struct */
-    ADC_CommonInitStructure.ADC_Prescaler = ADC_Prescaler_Div4;
-    ADC_CommonInit(&ADC_CommonInitStructure);
-
-
-    /* Initialise the ADC1 by using its init structure */
-    ADC_StructInit(&ADC_InitStructure);
-    ADC_InitStructure.ADC_Resolution = ADC_Resolution_12b;	          // Set conversion resolution to 12bit
-    ADC_InitStructure.ADC_ScanConvMode = ENABLE;	                          // Enable Scan mode (single conversion for each channel of the group)
-    ADC_InitStructure.ADC_ContinuousConvMode = DISABLE;			  // Disable Continuous conversion
-    ADC_InitStructure.ADC_ExternalTrigConv = ADC_ExternalTrigConvEdge_None; // Disable external conversion trigger
-    ADC_InitStructure.ADC_DataAlign = ADC_DataAlign_Right;                  // Set conversion data alignement to right
-    ADC_InitStructure.ADC_NbrOfConversion = ADC_CONV_BUFF_SIZE;             // Set conversion data alignement to ADC_CONV_BUFF_SIZE
-    ADC_Init(ADC1, &ADC_InitStructure);
-
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 13, ADC_SampleTime_384Cycles);
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_13, 14, ADC_SampleTime_384Cycles);
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_12, 15, ADC_SampleTime_384Cycles);
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_11, 16, ADC_SampleTime_384Cycles);
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_10, 17, ADC_SampleTime_384Cycles);
+  /* Enable ADC clock & SYSCFG */
+  RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
+  
+  /* Enable the internal connection of Temperature sensor and with the ADC channels*/
+  ADC_TempSensorVrefintCmd(ENABLE);
+  
+  /* Wait until ADC + Temp sensor start */
+  T_StartupTimeDelay = 1024;
+  while (T_StartupTimeDelay--);
+  
+  /* Setup ADC common init struct */
+  ADC_CommonInitStructure.ADC_Prescaler = ADC_Prescaler_Div4;
+  ADC_CommonInit(&ADC_CommonInitStructure);
+  
+  
+  /* Initialise the ADC1 by using its init structure */
+  ADC_StructInit(&ADC_InitStructure);
+  ADC_InitStructure.ADC_Resolution = ADC_Resolution_12b;	          // Set conversion resolution to 12bit
+  ADC_InitStructure.ADC_ScanConvMode = ENABLE;	                          // Enable Scan mode (single conversion for each channel of the group)
+  ADC_InitStructure.ADC_ContinuousConvMode = DISABLE;			  // Disable Continuous conversion
+  ADC_InitStructure.ADC_ExternalTrigConv = ADC_ExternalTrigConvEdge_None; // Disable external conversion trigger
+  ADC_InitStructure.ADC_DataAlign = ADC_DataAlign_Right;                  // Set conversion data alignement to right
+  ADC_InitStructure.ADC_NbrOfConversion = ADC_CONV_BUFF_SIZE;             // Set conversion data alignement to ADC_CONV_BUFF_SIZE
+  ADC_Init(ADC1, &ADC_InitStructure);
+  
+  ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 13, ADC_SampleTime_384Cycles);
+  ADC_RegularChannelConfig(ADC1, ADC_Channel_13, 14, ADC_SampleTime_384Cycles);
+  ADC_RegularChannelConfig(ADC1, ADC_Channel_12, 15, ADC_SampleTime_384Cycles);
+  ADC_RegularChannelConfig(ADC1, ADC_Channel_11, 16, ADC_SampleTime_384Cycles);
+  ADC_RegularChannelConfig(ADC1, ADC_Channel_10, 17, ADC_SampleTime_384Cycles);
 }
 
 void configureDMA(void)
 {
-    NVIC_InitTypeDef NVIC_InitStructure;
-
-    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
-
-    DMA_DeInit(DMA1_Channel1);
-
-    DMA_StructInit(&DMA_InitStructure);
-    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&(ADC1->DR);	     // Set DMA channel Peripheral base address to ADC Data register
-    DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)&ADC_ConvertedValueBuff;  // Set DMA channel Memeory base addr to ADC_ConvertedValueBuff address
-    DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;                         // Set DMA channel direction to peripheral to memory
-    DMA_InitStructure.DMA_BufferSize = ADC_CONV_BUFF_SIZE;                     // Set DMA channel buffersize to peripheral to ADC_CONV_BUFF_SIZE
-    DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;	     // Disable DMA channel Peripheral address auto increment
-    DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;                    // Enable Memeory increment (To be verified ....)
-    DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord;// set Peripheral data size to 8bit 
-    DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;	     // set Memeory data size to 8bit 
-    DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;                              // Set DMA in normal mode
-    DMA_InitStructure.DMA_Priority = DMA_Priority_High;	                     // Set DMA channel priority to High
-    DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;                               // Disable memory to memory option 
-    DMA_Init(DMA1_Channel1, &DMA_InitStructure);								 // Use Init structure to initialise channel1 (channel linked to ADC)
-
-    DMA_ITConfig(DMA1_Channel1, DMA_IT_TC, ENABLE);
-
-    NVIC_InitStructure.NVIC_IRQChannel = DMA1_Channel1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
+  NVIC_InitTypeDef NVIC_InitStructure;
+  
+  RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+  
+  DMA_DeInit(DMA1_Channel1);
+  
+  DMA_StructInit(&DMA_InitStructure);
+  DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&(ADC1->DR);	     // Set DMA channel Peripheral base address to ADC Data register
+  DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)&ADC_ConvertedValueBuff;  // Set DMA channel Memeory base addr to ADC_ConvertedValueBuff address
+  DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;                         // Set DMA channel direction to peripheral to memory
+  DMA_InitStructure.DMA_BufferSize = ADC_CONV_BUFF_SIZE;                     // Set DMA channel buffersize to peripheral to ADC_CONV_BUFF_SIZE
+  DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;	     // Disable DMA channel Peripheral address auto increment
+  DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;                    // Enable Memeory increment (To be verified ....)
+  DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord;// set Peripheral data size to 8bit 
+  DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;	     // set Memeory data size to 8bit 
+  DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;                              // Set DMA in normal mode
+  DMA_InitStructure.DMA_Priority = DMA_Priority_High;	                     // Set DMA channel priority to High
+  DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;                               // Disable memory to memory option 
+  DMA_Init(DMA1_Channel1, &DMA_InitStructure);								 // Use Init structure to initialise channel1 (channel linked to ADC)
+  
+  DMA_ITConfig(DMA1_Channel1, DMA_IT_TC, ENABLE);
+  
+  NVIC_InitStructure.NVIC_IRQChannel = DMA1_Channel1_IRQn;
+  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init(&NVIC_InitStructure);
+  
 }
 
 void RCC_Configuration(void)
 {
-    RCC_HSICmd(ENABLE);
-
-    while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET)
-    {
-    }
-
-    RCC_SYSCLKConfig(RCC_SYSCLKSource_HSI);
-
-    RCC_MSIRangeConfig(RCC_MSIRange_6);
-
-    RCC_HSEConfig(RCC_HSE_OFF);
-    if (RCC_GetFlagStatus(RCC_FLAG_HSERDY) != RESET)
-    {
-        while (1);
-    }
-
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_LCD | RCC_APB1Periph_PWR, ENABLE);
-
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_SYSCFG, ENABLE);
-
+  RCC_HSICmd(ENABLE);
+  
+  while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET)
+  {
+  }
+  
+  RCC_SYSCLKConfig(RCC_SYSCLKSource_HSI);
+  
+  RCC_MSIRangeConfig(RCC_MSIRange_6);
+  
+  RCC_HSEConfig(RCC_HSE_OFF);
+  if (RCC_GetFlagStatus(RCC_FLAG_HSERDY) != RESET)
+  {
+    while (1);
+  }
+  
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_LCD | RCC_APB1Periph_PWR, ENABLE);
+  
+  RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_SYSCFG, ENABLE);
+  
 }
 
 
 void RTC_Configuration(void)
 {
-    PWR_RTCAccessCmd(ENABLE);
-
-    RCC_RTCResetCmd(ENABLE);
-    RCC_RTCResetCmd(DISABLE);
-
-    RCC_LSEConfig(RCC_LSE_ON);
-
-    while (RCC_GetFlagStatus(RCC_FLAG_LSERDY) == RESET)
-    {
-    }
-
-    RCC_RTCCLKCmd(ENABLE);
-    
-    RCC_RTCCLKConfig(RCC_RTCCLKSource_LSE);
-
+  PWR_RTCAccessCmd(ENABLE);
+  
+  RCC_RTCResetCmd(ENABLE);
+  RCC_RTCResetCmd(DISABLE);
+  
+  RCC_LSEConfig(RCC_LSE_ON);
+  
+  while (RCC_GetFlagStatus(RCC_FLAG_LSERDY) == RESET)
+  {
+  }
+  
+  RCC_RTCCLKCmd(ENABLE);
+  
+  RCC_RTCCLKConfig(RCC_RTCCLKSource_LSE);
+  
 }
 
 void conf_analog_all_GPIOS(void)
 {
-    GPIO_InitTypeDef GPIO_InitStructure;
-
-    /* Enable GPIOs clock */
-    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB |
-        RCC_AHBPeriph_GPIOC | RCC_AHBPeriph_GPIOD |
-        RCC_AHBPeriph_GPIOE | RCC_AHBPeriph_GPIOH, ENABLE);
-
-    /* Configure all GPIO port pins in Analog Input mode (floating input trigger OFF) */
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_All;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_40MHz;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN;
-
-    GPIO_Init(GPIOB, &GPIO_InitStructure);
-    GPIO_Init(GPIOC, &GPIO_InitStructure);
-    GPIO_Init(GPIOD, &GPIO_InitStructure);
-    GPIO_Init(GPIOE, &GPIO_InitStructure);
-    GPIO_Init(GPIOH, &GPIO_InitStructure);
-
+  GPIO_InitTypeDef GPIO_InitStructure;
+  
+  /* Enable GPIOs clock */
+  RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB |
+                        RCC_AHBPeriph_GPIOC | RCC_AHBPeriph_GPIOD |
+                          RCC_AHBPeriph_GPIOE | RCC_AHBPeriph_GPIOH, ENABLE);
+  
+  /* Configure all GPIO port pins in Analog Input mode (floating input trigger OFF) */
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_All;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_40MHz;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN;
+  
+  GPIO_Init(GPIOB, &GPIO_InitStructure);
+  GPIO_Init(GPIOC, &GPIO_InitStructure);
+  GPIO_Init(GPIOD, &GPIO_InitStructure);
+  GPIO_Init(GPIOE, &GPIO_InitStructure);
+  GPIO_Init(GPIOH, &GPIO_InitStructure);
+  
 #if  DEBUG_SWD_PIN == 1
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_All & (~GPIO_Pin_13) & (~GPIO_Pin_14);
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_All & (~GPIO_Pin_13) & (~GPIO_Pin_14);
 #endif
-
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-    /* Disable GPIOs clock */
-    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB |
-        RCC_AHBPeriph_GPIOC | RCC_AHBPeriph_GPIOD |
-        RCC_AHBPeriph_GPIOE | RCC_AHBPeriph_GPIOH, DISABLE);
+  
+  GPIO_Init(GPIOA, &GPIO_InitStructure);
+  
+  /* Disable GPIOs clock */
+  RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB |
+                        RCC_AHBPeriph_GPIOC | RCC_AHBPeriph_GPIOD |
+                          RCC_AHBPeriph_GPIOE | RCC_AHBPeriph_GPIOH, DISABLE);
 }
 
 void  Init_GPIOs(void)
 {
-    GPIO_InitTypeDef GPIO_InitStructure;
-
-    EXTI_InitTypeDef EXTI_InitStructure;
-    NVIC_InitTypeDef NVIC_InitStructure;
-
-    conf_analog_all_GPIOS();   /* configure all GPIOs as analog input */
-
-    /* Enable GPIOs clock */
-    RCC_AHBPeriphClockCmd(LD_GPIO_PORT_CLK | USERBUTTON_GPIO_CLK, ENABLE);
-
-    /* USER button and WakeUP button init: GPIO set in input interrupt active mode */
-
-    /* Configure User Button pin as input */
-    GPIO_InitStructure.GPIO_Pin = USERBUTTON_GPIO_PIN;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_40MHz;
-    GPIO_Init(USERBUTTON_GPIO_PORT, &GPIO_InitStructure);
-
-    /* Connect Button EXTI Line to Button GPIO Pin */
-    SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOA, EXTI_PinSource0);
-
-    /* Configure User Button and IDD_WakeUP EXTI line */
-    EXTI_InitStructure.EXTI_Line = EXTI_Line0;  // PA0 for User button AND IDD_WakeUP
-    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
-    EXTI_InitStructure.EXTI_LineCmd = ENABLE;
-    EXTI_Init(&EXTI_InitStructure);
-
-    /* Enable and set User Button and IDD_WakeUP EXTI Interrupt to the lowest priority */
-    NVIC_InitStructure.NVIC_IRQChannel = EXTI0_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x0F;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x0F;
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-
-    NVIC_Init(&NVIC_InitStructure);
-
-    /* Configure the GPIO_LED pins  LD3 & LD4*/
-    GPIO_InitStructure.GPIO_Pin = LD_GREEN_GPIO_PIN | LD_BLUE_GPIO_PIN;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-    GPIO_Init(LD_GPIO_PORT, &GPIO_InitStructure);
-    GPIO_LOW(LD_GPIO_PORT, LD_GREEN_GPIO_PIN);
-    GPIO_LOW(LD_GPIO_PORT, LD_BLUE_GPIO_PIN);
-
-    /* Disable all GPIOs clock */
-    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB |
-        RCC_AHBPeriph_GPIOC | RCC_AHBPeriph_GPIOD |
-        RCC_AHBPeriph_GPIOE | RCC_AHBPeriph_GPIOH, DISABLE);
-
+  GPIO_InitTypeDef GPIO_InitStructure;
+  
+  EXTI_InitTypeDef EXTI_InitStructure;
+  NVIC_InitTypeDef NVIC_InitStructure;
+  
+  conf_analog_all_GPIOS();   /* configure all GPIOs as analog input */
+  
+  /* Enable GPIOs clock */
+  RCC_AHBPeriphClockCmd(LD_GPIO_PORT_CLK | USERBUTTON_GPIO_CLK, ENABLE);
+  
+  /* USER button and WakeUP button init: GPIO set in input interrupt active mode */
+  
+  /* Configure User Button pin as input */
+  GPIO_InitStructure.GPIO_Pin = USERBUTTON_GPIO_PIN;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_40MHz;
+  GPIO_Init(USERBUTTON_GPIO_PORT, &GPIO_InitStructure);
+  
+  /* Connect Button EXTI Line to Button GPIO Pin */
+  SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOA, EXTI_PinSource0);
+  
+  /* Configure User Button and IDD_WakeUP EXTI line */
+  EXTI_InitStructure.EXTI_Line = EXTI_Line0;  // PA0 for User button AND IDD_WakeUP
+  EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+  EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
+  EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+  EXTI_Init(&EXTI_InitStructure);
+  
+  /* Enable and set User Button and IDD_WakeUP EXTI Interrupt to the lowest priority */
+  NVIC_InitStructure.NVIC_IRQChannel = EXTI0_IRQn;
+  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x0F;
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x0F;
+  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+  
+  NVIC_Init(&NVIC_InitStructure);
+  
+  /* Configure the GPIO_LED pins  LD3 & LD4*/
+  GPIO_InitStructure.GPIO_Pin = LD_GREEN_GPIO_PIN | LD_BLUE_GPIO_PIN;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
+  GPIO_Init(LD_GPIO_PORT, &GPIO_InitStructure);
+  GPIO_LOW(LD_GPIO_PORT, LD_GREEN_GPIO_PIN);
+  GPIO_LOW(LD_GPIO_PORT, LD_BLUE_GPIO_PIN);
+  
+  /* Disable all GPIOs clock */
+  RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB |
+                        RCC_AHBPeriph_GPIOC | RCC_AHBPeriph_GPIOD |
+                          RCC_AHBPeriph_GPIOE | RCC_AHBPeriph_GPIOH, DISABLE);
+  
+  RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
+  
 }
 
 void processTempData(void)
 {
-    ultrassom1 = ADC_ConvertedValueBuff[13];
-    ultrassom2 = ADC_ConvertedValueBuff[14];
-    ultrassom3 = ADC_ConvertedValueBuff[15];
-    ultrassom4 = ADC_ConvertedValueBuff[16];
-    ultrassom5 = ADC_ConvertedValueBuff[17];
+  ultrassom1 = ADC_ConvertedValueBuff[13];
+  ultrassom2 = ADC_ConvertedValueBuff[14];
+  ultrassom3 = ADC_ConvertedValueBuff[15];
+  ultrassom4 = ADC_ConvertedValueBuff[16];
+  ultrassom5 = ADC_ConvertedValueBuff[17];
 }
 
 void Delay(uint32_t nTime)
 {
-    TimingDelay = nTime;
-
-    while (TimingDelay != 0);
-
+  TimingDelay = nTime;
+  
+  while (TimingDelay != 0);
+  
 }
 
 void TimingDelay_Decrement(void)
 {
-
-    if (TimingDelay != 0x00)
-    {
-        TimingDelay--;
-    }
-
+  
+  if (TimingDelay != 0x00)
+  {
+    TimingDelay--;
+  }
+  
 }
 
