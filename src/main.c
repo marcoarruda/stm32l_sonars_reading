@@ -65,7 +65,7 @@ TSCALIB_TypeDef calibdata;    /* field storing temp sensor calibration data */
 volatile bool flag_ADCDMA_TransferComplete;
 volatile bool flag_UserButton;
 
-static volatile uint32_t TimingDelay = 250;
+static volatile uint32_t TimingDelay = 450;
 RCC_ClocksTypeDef RCC_Clocks;
 
 __IO FLASH_Status FLASHStatus = FLASH_COMPLETE;
@@ -109,7 +109,6 @@ int main(void)
   configureADC_Temp();
   
   t = 0;
-  predefvalue = 32767;
   
   while (1) {
     if (TimingDelay > 0) continue;
@@ -122,11 +121,6 @@ int main(void)
     
     powerDownADC_Temper();
     processTempData();
-    ultrassom5 = predefvalue;
-    ultrassom4 = ultrassom5 - 12000;
-    ultrassom3 = ultrassom4 - 8000;
-    ultrassom2 = ultrassom3 - 300;
-    ultrassom1 = ultrassom2 - 10;
     
     /* uint16 > -32768 -- +32767 */
     /* tamanho máximo de %s de uint16 = 5 */
