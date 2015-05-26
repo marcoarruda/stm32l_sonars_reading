@@ -65,7 +65,7 @@ TSCALIB_TypeDef calibdata;    /* field storing temp sensor calibration data */
 volatile bool flag_ADCDMA_TransferComplete;
 volatile bool flag_UserButton;
 
-static volatile uint32_t TimingDelay = 450;
+static volatile uint32_t TimingDelay;
 RCC_ClocksTypeDef RCC_Clocks;
 
 __IO FLASH_Status FLASHStatus = FLASH_COMPLETE;
@@ -79,6 +79,7 @@ void  acquireTemperatureData(void);
 void  configureADC_Temp(void);
 void  configureDMA(void);
 void  powerDownADC_Temper(void);
+uint16_t conversaoADCMilimetros(uint16_t ultrassomADC);
 void  processTempData(void);
 void  configureWakeup(void);
 void insertionSort(uint16_t *numbers, uint32_t array_size);
@@ -89,7 +90,7 @@ void clearUserButtonFlag(void);
 int main(void)
 {
   RCC_Configuration();
-  RTC_Configuration();
+  //RTC_Configuration();
   PWR_VoltageScalingConfig(PWR_VoltageScaling_Range1);
   while (PWR_GetFlagStatus(PWR_FLAG_VOS) != RESET);
   
@@ -98,7 +99,7 @@ int main(void)
 #endif
   
   RCC_GetClocksFreq(&RCC_Clocks);
-  SysTick_Config(RCC_Clocks.HCLK_Frequency / 500);
+  SysTick_Config(RCC_Clocks.HCLK_Frequency / 1000);
   
   Init_GPIOs();
   
@@ -110,9 +111,11 @@ int main(void)
   
   t = 0;
   
+  int defaultTD = 50;
+  TimingDelay = defaultTD;
   while (1) {
     if (TimingDelay > 0) continue;
-    TimingDelay = 450;
+    TimingDelay = defaultTD;
     acquireTemperatureData();
     __WFI();
     
@@ -475,6 +478,12 @@ void processTempData(void)
   ultrassom3 = ADC_ConvertedValueBuff[15];
   ultrassom4 = ADC_ConvertedValueBuff[16];
   ultrassom5 = ADC_ConvertedValueBuff[17];
+}
+
+uint16_t conversaoADCMilimetros(uint16_t ultrassomADC) {
+  uint32_t ultrassomMilimetros32 = ((3130 * ultrassomADC) + 22413) / 1000;
+  uint16_t ultrassomMilimetros16 = ultrassomMilimetros32;
+  return ultrassomMilimetros16;
 }
 
 void Delay(uint32_t nTime)
