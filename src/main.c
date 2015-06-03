@@ -473,11 +473,11 @@ void  Init_GPIOs(void)
 
 void processTempData(void)
 {
-  ultrassom1 = ADC_ConvertedValueBuff[13];
-  ultrassom2 = ADC_ConvertedValueBuff[14];
-  ultrassom3 = ADC_ConvertedValueBuff[15];
-  ultrassom4 = ADC_ConvertedValueBuff[16];
-  ultrassom5 = ADC_ConvertedValueBuff[17];
+  ultrassom1 = conversaoADCMilimetros(ADC_ConvertedValueBuff[13]);
+  ultrassom2 = conversaoADCMilimetros(ADC_ConvertedValueBuff[14]);
+  ultrassom3 = conversaoADCMilimetros(ADC_ConvertedValueBuff[15]);
+  ultrassom4 = conversaoADCMilimetros(ADC_ConvertedValueBuff[16]);
+  ultrassom5 = conversaoADCMilimetros(ADC_ConvertedValueBuff[17]);
 }
 
 uint16_t conversaoADCMilimetros(uint16_t ultrassomADC) {
